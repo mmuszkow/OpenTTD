@@ -8,6 +8,122 @@
 #define MIN_STACK_OVERHEAD 10
 
 #define SQ_SUSPEND_FLAG -666
+
+// visual sucks, this doesn't compile (also with tr1)
+//#include <unordered_map>
+//std::unordered_map<int, int> zz;
+
+#include <string>
+#include <algorithm>
+#include <ctime>
+
+// basically a hash map for storing function calls count
+// todo: copy contructor, assignment operator etc
+class SQProfiler {
+
+	struct FuncCount {
+		std::string name;
+		unsigned long long count;
+		FuncCount* next;
+
+		FuncCount() {}
+		FuncCount(const std::string& _name) : name(_name), count(1), next(NULL) {}
+	};
+
+	// for qsort, std::vector doesn't compile for some reason in this project, so I needed to stay with pure C...
+	static int __cdecl cmpfunc(const void* a, const void* b) {
+		return reinterpret_cast<const FuncCount*>(b)->count - reinterpret_cast<const FuncCount*>(a)->count;
+	}
+
+	static const int HASH_MAP_SIZE = 32 * 1024;
+	FuncCount* _hash_map[HASH_MAP_SIZE];
+	int size;
+	time_t last_save;
+
+	// hashing func I always use
+	int _djb2_hash(const std::string& str) {
+		unsigned long hash = 5381;
+		int c;
+		for (int i = 0; i < str.length(); ++i) {
+			c = (int)str[i];
+			hash = ((hash << 5) + hash) + c;
+		}
+		return hash % HASH_MAP_SIZE;
+	}
+
+public:
+	SQProfiler() : size(0) {
+		for (int i = 0; i < HASH_MAP_SIZE; i++)
+			_hash_map[i] = NULL;
+		last_save = time(NULL);
+	}
+
+	~SQProfiler() {
+		FuncCount* to_del;
+		for (int i = 0; i < HASH_MAP_SIZE; i++) {
+			FuncCount* ptr = _hash_map[i];
+			while (ptr)	{
+				to_del = ptr;
+				ptr = ptr->next;
+				delete to_del;
+			}
+		}
+	}
+
+	void call(const std::string& name) {
+		int hash = _djb2_hash(name);
+		FuncCount* ptr = _hash_map[hash];
+		if (!ptr) {
+			_hash_map[hash] = new FuncCount(name);
+			size++;
+		}
+		else {
+			while (ptr->next) {
+				if (ptr->name == name) {
+					ptr->count++;
+					return;
+				}
+				ptr = ptr->next;
+			}
+			if (ptr->name == name) {
+				ptr->count++;
+				return;
+			}
+			ptr->next = new FuncCount(name);
+			size++;
+		}
+	}
+
+	// saves results to file every 60 secs
+	void print() {
+		if (time(NULL) - last_save < 60)
+			return;
+		last_save = time(NULL);
+
+		FILE* f = fopen("G:/profiler.txt", "w");
+		if (!f)
+			return;
+
+		FuncCount* sorted = new FuncCount[this->size];
+		int i = 0;
+		for (int hash = 0; hash < HASH_MAP_SIZE; hash++) {
+			FuncCount* ptr = _hash_map[hash];
+			while (ptr) {
+				sorted[i++] = *ptr;
+				ptr = ptr->next;
+			}
+		}
+
+		qsort(sorted, this->size, sizeof(FuncCount), SQProfiler::cmpfunc);
+
+		for (i = 0; i < this->size; i++)
+			fprintf(f, "%s: %f%%\n", sorted[i].name.c_str(), (sorted[i].count / static_cast<double>(sorted[0].count)) * 100.0);
+		fputs("", f);
+		fclose(f);
+		delete[] sorted;
+	}
+};
+
 //base lib
 void sq_base_register(HSQUIRRELVM v);
 
@@ -27,6 +143,7 @@ struct SQExceptionTrap{
 #define TARGET _stack._vals[_stackbase+arg0]
 
 typedef sqvector<SQExceptionTrap> ExceptionsTraps;
+
 
 struct SQVM : public CHAINABLE_OBJ
 {
@@ -146,6 +263,7 @@ public:
 	SQObjectPtr _lasterror;
 	SQObjectPtr _errorhandler;
 	SQObjectPtr _debughook;
+	SQProfiler _profiler;
 
 	SQObjectPtr temp_reg;
 

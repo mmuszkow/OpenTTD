@@ -744,7 +744,36 @@ exception_restore:
 		for(;;)
 		{
 			DecreaseOps(1);
-			if (ShouldSuspend()) { _suspended = SQTrue; _suspended_traps = traps; return true; }
+			if (ShouldSuspend()) { _profiler.print();  _suspended = SQTrue; _suspended_traps = traps; return true; }
+
+			// this is a main ops counting loop
+			// we count stack functions here
+			for (SQInteger i = 0; i < _callsstacksize; i++) {
+				const CallInfo &call = _callsstack[i];
+
+				switch (call._closure._type) {
+				case OT_NATIVECLOSURE: {
+					std::string name = "native:";
+					if (type(_nativeclosure(call._closure)->_name) == OT_STRING)
+						name += _stringval(_nativeclosure(call._closure)->_name);
+					_profiler.call(name);
+					break;
+				}
+				case OT_CLOSURE: {
+					SQFunctionProto *func = _funcproto(_closure(call._closure)->_function);
+					std::string name;
+					if (type(func->_sourcename) == OT_STRING)
+						name += _stringval(func->_sourcename);
+					if (type(func->_name) == OT_STRING) {
+						name += ":";
+						name += _stringval(func->_name);
+					}
+					//line = func->GetLine(call._ip);
+					_profiler.call(name);
+					break;
+				}
+				}
+			}
 
 			const SQInstruction &_i_ = *ci->_ip++;
 			//dumpstack(_stackbase);
