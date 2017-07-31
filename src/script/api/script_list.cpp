@@ -908,13 +908,13 @@ SQInteger ScriptList::Valuate(HSQUIRRELVM vm)
 
 		/* Kill the script when the valuator call takes way too long.
 		 * Triggered by nesting valuators, which then take billions of iterations. */
-		if (ScriptController::GetOpsTillSuspend() < -1000000) {
+		//if (ScriptController::GetOpsTillSuspend() < -1000000) {
 			/* See below for explanation. The extra pop is the return value. */
-			sq_pop(vm, nparam + 4);
+			//sq_pop(vm, nparam + 4);
 
-			ScriptObject::SetAllowDoCommand(backup_allow);
-			return sq_throwerror(vm, "excessive CPU usage in valuator function");
-		}
+			//ScriptObject::SetAllowDoCommand(backup_allow);
+			//return sq_throwerror(vm, "excessive CPU usage in valuator function");
+		//}
 
 		/* Was something changed? */
 		if (previous_modification_count != this->modifications) {
