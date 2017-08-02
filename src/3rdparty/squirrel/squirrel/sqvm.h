@@ -17,6 +17,8 @@
 #include <algorithm>
 #include <ctime>
 
+#include "../../../script/api/script_log.hpp"
+
 // basically a hash map for storing function calls count
 // todo: copy contructor, assignment operator etc
 class SQProfiler {
@@ -94,15 +96,11 @@ public:
 		}
 	}
 
-	// saves results to file every 60 secs
+	// print results in log every 60 secs
 	void print() {
 		if (time(NULL) - last_save < 60)
 			return;
 		last_save = time(NULL);
-
-		FILE* f = fopen("G:/profiler.txt", "w");
-		if (!f)
-			return;
 
 		FuncCount* sorted = new FuncCount[this->size];
 		int i = 0;
@@ -116,10 +114,14 @@ public:
 
 		qsort(sorted, this->size, sizeof(FuncCount), SQProfiler::cmpfunc);
 
-		for (i = 0; i < this->size; i++)
-			fprintf(f, "%s: %f%%\n", sorted[i].name.c_str(), (sorted[i].count / static_cast<double>(sorted[0].count)) * 100.0);
-		fputs("", f);
-		fclose(f);
+		char buff[1024];
+		ScriptLog::Info("----------------------------");
+		for (i = 0; i < this->size; i++) {
+			sprintf(buff, "%s: %f%%\n", sorted[i].name.c_str(), (sorted[i].count / static_cast<double>(sorted[0].count)) * 100.0);
+			ScriptLog::Info(buff);
+		}
+		ScriptLog::Info("----------------------------");
+
 		delete[] sorted;
 	}
 };
