@@ -13,7 +13,6 @@
 //#include <unordered_map>
 //std::unordered_map<int, int> zz;
 
-#include <string>
 #include <algorithm>
 #include <ctime>
 
@@ -24,12 +23,14 @@
 class SQProfiler {
 
 	struct FuncCount {
-		std::string name;
+		char name[255];
 		unsigned long long count;
 		FuncCount* next;
 
 		FuncCount() {}
-		FuncCount(const std::string& _name) : name(_name), count(1), next(NULL) {}
+		FuncCount(const char* _name) : count(1), next(NULL) {
+			strcpy(name, _name);
+		}
 	};
 
 	// for qsort, std::vector doesn't compile for some reason in this project, so I needed to stay with pure C...
@@ -43,13 +44,11 @@ class SQProfiler {
 	time_t last_save;
 
 	// hashing func I always use
-	int _djb2_hash(const std::string& str) {
+	inline int _djb2_hash(const char* str) {
 		unsigned long hash = 5381;
 		int c;
-		for (int i = 0; i < str.length(); ++i) {
-			c = (int)str[i];
-			hash = ((hash << 5) + hash) + c;
-		}
+		while (c = *str++)
+			hash = ((hash << 5) + hash) + c; /* hash * 33 + c */
 		return hash % HASH_MAP_SIZE;
 	}
 
@@ -72,58 +71,10 @@ public:
 		}
 	}
 
-	void call(const std::string& name) {
-		int hash = _djb2_hash(name);
-		FuncCount* ptr = _hash_map[hash];
-		if (!ptr) {
-			_hash_map[hash] = new FuncCount(name);
-			size++;
-		}
-		else {
-			while (ptr->next) {
-				if (ptr->name == name) {
-					ptr->count++;
-					return;
-				}
-				ptr = ptr->next;
-			}
-			if (ptr->name == name) {
-				ptr->count++;
-				return;
-			}
-			ptr->next = new FuncCount(name);
-			size++;
-		}
-	}
+	void call(const char* name);
 
 	// print results in log every 60 secs
-	void print() {
-		if (time(NULL) - last_save < 60)
-			return;
-		last_save = time(NULL);
-
-		FuncCount* sorted = new FuncCount[this->size];
-		int i = 0;
-		for (int hash = 0; hash < HASH_MAP_SIZE; hash++) {
-			FuncCount* ptr = _hash_map[hash];
-			while (ptr) {
-				sorted[i++] = *ptr;
-				ptr = ptr->next;
-			}
-		}
-
-		qsort(sorted, this->size, sizeof(FuncCount), SQProfiler::cmpfunc);
-
-		char buff[1024];
-		ScriptLog::Info("----------------------------");
-		for (i = 0; i < this->size; i++) {
-			sprintf(buff, "%s: %f%%\n", sorted[i].name.c_str(), (sorted[i].count / static_cast<double>(sorted[0].count)) * 100.0);
-			ScriptLog::Info(buff);
-		}
-		ScriptLog::Info("----------------------------");
-
-		delete[] sorted;
-	}
+	void print();
 };
 
 //base lib

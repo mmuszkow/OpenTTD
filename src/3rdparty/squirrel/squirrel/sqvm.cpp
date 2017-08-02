@@ -21,6 +21,59 @@
 
 #include "../../../safeguards.h"
 
+void SQProfiler::call(const char* name) {
+	int hash = _djb2_hash(name);
+	FuncCount* ptr = _hash_map[hash];
+	if (!ptr) {
+		_hash_map[hash] = new FuncCount(name);
+		size++;
+	}
+	else {
+		while (ptr->next) {
+			if (strcmp(ptr->name, name) == 0) {
+				ptr->count++;
+				return;
+			}
+			ptr = ptr->next;
+		}
+		if (strcmp(ptr->name, name)) {
+			ptr->count++;
+			return;
+		}
+		ptr->next = new FuncCount(name);
+		size++;
+	}
+}
+
+// print results in log every 5 mins
+void SQProfiler::print() {
+	if (time(NULL) - last_save < 300)
+		return;
+	last_save = time(NULL);
+
+	FuncCount* sorted = new FuncCount[this->size];
+	int i = 0;
+	for (int hash = 0; hash < HASH_MAP_SIZE; hash++) {
+		FuncCount* ptr = _hash_map[hash];
+		while (ptr) {
+			sorted[i++] = *ptr;
+			ptr = ptr->next;
+		}
+	}
+
+	qsort(sorted, this->size, sizeof(FuncCount), SQProfiler::cmpfunc);
+
+	char buff[1024];
+	ScriptLog::Info("----------------------------");
+	for (i = 0; i < this->size; i++) {
+		seprintf(buff, buff + 1023, "%f%% %s", (sorted[i].count / static_cast<double>(sorted[0].count)) * 100.0, sorted[i].name);
+		ScriptLog::Info(buff);
+	}
+	ScriptLog::Info("----------------------------");
+
+	delete[] sorted;
+}
+
 #define TOP() (_stack._vals[_top-1])
 
 #define CLEARSTACK(_last_top) { if((_last_top) >= _top) ClearStack(_last_top); }
@@ -748,28 +801,33 @@ exception_restore:
 
 			// this is a main ops counting loop
 			// we count stack functions here
+			char buff[256];
+			int len;
 			for (SQInteger i = 0; i < _callsstacksize; i++) {
 				const CallInfo &call = _callsstack[i];
-
+				buff[0] = 0;
 				switch (call._closure._type) {
 				case OT_NATIVECLOSURE: {
-					std::string name = "native:";
-					if (type(_nativeclosure(call._closure)->_name) == OT_STRING)
-						name += _stringval(_nativeclosure(call._closure)->_name);
-					_profiler.call(name);
+					if (type(_nativeclosure(call._closure)->_name) == OT_STRING) {
+						strecpy(buff, "native:", buff + 255);
+						strecpy(buff + 7, _stringval(_nativeclosure(call._closure)->_name), buff + 248);
+						_profiler.call(buff);
+					}
 					break;
 				}
 				case OT_CLOSURE: {
 					SQFunctionProto *func = _funcproto(_closure(call._closure)->_function);
-					std::string name;
-					if (type(func->_sourcename) == OT_STRING)
-						name += _stringval(func->_sourcename);
-					if (type(func->_name) == OT_STRING) {
-						name += ":";
-						name += _stringval(func->_name);
-					}
-					//line = func->GetLine(call._ip);
-					_profiler.call(name);
+					if (type(func->_sourcename) == OT_STRING) {
+						if (type(func->_name) == OT_STRING) {
+							len = func->_sourcename._unVal.pString->_len;
+							strecpy(buff, _stringval(func->_sourcename), buff + 255);
+							buff[len++] = ':';
+							strecpy(buff + len, _stringval(func->_name), buff + 255 - len);
+							_profiler.call(buff);
+						} else
+							_profiler.call(_stringval(func->_sourcename));
+					} else if (type(func->_name) == OT_STRING)
+						_profiler.call(_stringval(func->_name));			
 					break;
 				}
 				}
